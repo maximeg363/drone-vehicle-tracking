@@ -28,7 +28,9 @@ from tracking.visdrone import list_sequences, load_annotations, vehicle_ground_t
 
 OUT_DIR = Path("results") / "analysis"
 FIG_DIR = Path("docs") / "figures"
-INFER_SIZE = 1280  # must match --imgsz of the runs
+# Object sizes are reported at this reference input size, so runs with different --imgsz
+# are compared on the same size bins.
+INFER_SIZE = 1280
 
 SIZE_BINS = [0, 16, 24, 32, 48, np.inf]
 SIZE_LABELS = ["<16", "16-24", "24-32", "32-48", "≥48"]

@@ -21,10 +21,17 @@ from tracking.drawing import VideoWriter, draw_tracks
 from tracking.mot_format import MOTWriter
 from tracking.visdrone import list_sequences
 
-# COCO class indices of the pretrained YOLO models: car, bus, truck.
-# COCO has no "van"; vans usually come out as car or truck, so we track these and
-# treat everything as one "vehicle" class during evaluation.
-COCO_VEHICLE_CLASSES = [2, 5, 7]
+# Vehicle classes are picked by name, so the same script works for COCO models (car, bus, truck)
+# and for models fine-tuned on VisDrone (car, van, truck, bus). COCO has no "van"; vans usually
+# come out as car or truck. All of them are treated as one "vehicle" class during evaluation.
+VEHICLE_NAMES = {"car", "van", "truck", "bus"}
+
+
+def vehicle_class_ids(model) -> list[int]:
+    ids = [i for i, name in model.names.items() if name in VEHICLE_NAMES]
+    if not ids:
+        raise SystemExit(f"Model has none of the classes {sorted(VEHICLE_NAMES)}: {model.names}")
+    return ids
 
 
 def pick_device(requested: str) -> str:
@@ -44,6 +51,7 @@ def track_sequence(seq, args, device: str, out_dir: Path) -> dict:
 
     # A fresh model per sequence also gives a fresh tracker state, so IDs never leak across sequences.
     model = YOLO(args.model)
+    classes = vehicle_class_ids(model)
     mot = MOTWriter(out_dir / "tracks" / f"{seq.name}.txt")
     video = VideoWriter(out_dir / "videos" / f"{seq.name}.mp4", fps=args.fps) if args.save_video else None
 
@@ -55,7 +63,7 @@ def track_sequence(seq, args, device: str, out_dir: Path) -> dict:
             frame,
             persist=True,
             tracker=args.tracker,
-            classes=COCO_VEHICLE_CLASSES,
+            classes=classes,
             imgsz=args.imgsz,
             conf=args.conf,
             device=device,

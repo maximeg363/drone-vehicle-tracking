@@ -96,7 +96,8 @@ analyze_errors.py    error breakdown and charts
 - [x] Evaluation with TrackEval (HOTA, MOTA, IDF1)
 - [x] Comparison of ByteTrack and BoT-SORT
 - [x] Failure analysis (object size, occlusion, camera motion)
-- [ ] Larger input size and tiled inference for small objects
+- [x] Larger input size for small objects
+- [ ] Tiled inference
 - [ ] Fine-tuning the detector on VisDrone-DET
 
 ## Results
@@ -167,8 +168,23 @@ and sometimes only as its front. Both boxes overlap the ground truth enough to c
 the two competing tracks cause most of the ID switches in the otherwise easy sequence
 uav0000268_05773_v, for both trackers alike.
 
-These findings point to the next steps: a larger input size or tiled inference for the
-small vehicles, and fine-tuning on drone images for the top-down view.
+### Larger input size helps small vehicles, but not the top-down view
+
+Running BoT-SORT with `--imgsz 1920` instead of 1280 gives the detector 1.5 times more pixels
+per object.
+
+| Input size | HOTA | DetA | AssA | MOTA | IDF1 | ID switches | FP | FN | FPS |
+|---|---|---|---|---|---|---|---|---|---|
+| 1280 | 50.8 | 38.6 | **67.9** | **39.0** | 60.5 | **233** | **5,377** | 18,955 | 11 to 28 |
+| 1920 | **51.6** | **40.9** | 66.5 | 38.2 | **62.3** | 257 | 8,668 | **15,959** | 12 to 15 |
+
+Recall for vehicles under 16 px (measured at 1280) jumps from 5% to 35%, and recall in the
+4K sequence rises from 25% to 39%. But the detector also produces 60% more false positives,
+so MOTA even drops a little and HOTA only gains 0.8 points. The top-down sequence
+uav0000305_00000_v does not improve at all (18% to 16%), which supports the idea that the
+problem there is the viewpoint and not the object size.
+
+These findings point to the next step: fine-tuning on drone images.
 
 ## License
 
