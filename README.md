@@ -103,13 +103,15 @@ analyze_errors.py    error breakdown and charts
 ## Results
 
 Baseline: YOLO11s pretrained on COCO, input size 1280, default tracker settings of Ultralytics.
+The detector threshold is 0.1, so the trackers also get the low-confidence boxes they use to
+recover vehicles. New tracks still need a confidence of 0.25.
 Evaluated on the six VisDrone2019-MOT validation sequences that contain vehicles
 (uav0000086_00000_v has none and is skipped), about 40,000 vehicle boxes in total.
 
 | Tracker | HOTA | DetA | AssA | MOTA | IDF1 | ID switches | FP | FN |
 |---|---|---|---|---|---|---|---|---|
-| ByteTrack | 44.9 | 36.4 | 56.7 | 37.1 | 52.0 | 423 | 4,759 | 20,145 |
-| BoT-SORT | **50.8** | **38.6** | **67.9** | **39.0** | **60.5** | **233** | 5,377 | **18,955** |
+| ByteTrack | 45.1 | 36.8 | 56.9 | 36.0 | 52.6 | 360 | **6,037** | 19,375 |
+| BoT-SORT | **50.8** | **38.8** | **67.8** | **37.2** | **60.6** | **161** | 7,174 | **17,957** |
 
 ### How the evaluation treats VisDrone
 
@@ -123,7 +125,7 @@ as in the official VisDrone toolkit.
 ### BoT-SORT keeps identities when the drone moves
 
 Both trackers get the same detections, so detection accuracy (DetA) is almost equal.
-The gap is in association: BoT-SORT has 45% fewer ID switches. The reason shows up once
+The gap is in association: BoT-SORT has 55% fewer ID switches. The reason shows up once
 the switches are split by how much the whole image moves between frames.
 
 <picture>
@@ -132,7 +134,7 @@ the switches are split by how much the whole image moves between frames.
 </picture>
 
 With a still camera both trackers behave about the same. When the drone pans, ByteTrack
-loses track much more often (44 vs. 12.5 switches per 100 frames). Both trackers predict
+loses track much more often (43 vs. 11 switches per 100 frames). Both trackers predict
 each box with a constant velocity Kalman filter, but a panning camera moves every object in
 the image at once and the prediction lands next to the vehicle. BoT-SORT estimates this
 global motion with sparse optical flow and corrects its predictions, ByteTrack does not.
@@ -140,7 +142,7 @@ global motion with sparse optical flow and corrects its predictions, ByteTrack d
 ### The detector is the bottleneck
 
 Almost half of all vehicles are never detected. When YOLO does fire it is mostly right
-(precision around 80%), so the problem is recall.
+(precision around 75%), so the problem is recall.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/recall_by_size_dark.png">
@@ -148,10 +150,10 @@ Almost half of all vehicles are never detected. When YOLO does fire it is mostly
 </picture>
 
 Size matters most. Vehicles smaller than 24 px at inference size make up 27% of the
-ground truth, and fewer than one in four of them is found. In the 4K sequence
+ground truth, and fewer than one in five of them is found. In the 4K sequence
 uav0000268_05773_v the image is shrunk by a factor of three before detection, and recall
-drops to 25%. Occlusion has a similar effect: 71% of fully visible vehicles are found,
-46% of partly occluded ones and only 7% of heavily occluded ones.
+drops to 27%. Occlusion has a similar effect: 71% of fully visible vehicles are found,
+51% of partly occluded ones and only 8% of heavily occluded ones.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/recall_by_occlusion_dark.png">
@@ -175,13 +177,13 @@ per object.
 
 | Input size | HOTA | DetA | AssA | MOTA | IDF1 | ID switches | FP | FN | FPS |
 |---|---|---|---|---|---|---|---|---|---|
-| 1280 | 50.8 | 38.6 | **67.9** | **39.0** | 60.5 | **233** | **5,377** | 18,955 | 11 to 28 |
-| 1920 | **51.6** | **40.9** | 66.5 | 38.2 | **62.3** | 257 | 8,668 | **15,959** | 12 to 15 |
+| 1280 | 50.8 | 38.8 | **67.8** | **37.2** | 60.6 | **161** | **7,174** | 17,957 | 11 to 28 |
+| 1920 | **51.1** | **40.8** | 65.7 | 34.9 | **60.9** | 225 | 10,908 | **15,075** | 12 to 15 |
 
-Recall for vehicles under 16 px (measured at 1280) jumps from 5% to 35%, and recall in the
-4K sequence rises from 25% to 39%. But the detector also produces 60% more false positives,
-so MOTA even drops a little and HOTA only gains 0.8 points. The top-down sequence
-uav0000305_00000_v does not improve at all (18% to 16%), which supports the idea that the
+Recall for vehicles under 16 px (measured at 1280) jumps from 7% to 44%, and recall in the
+4K sequence rises from 27% to 42%. But the detector also produces 52% more false positives,
+so MOTA drops by more than two points and HOTA only gains 0.3 points. The top-down sequence
+uav0000305_00000_v does not improve at all (18% to 17%), which supports the idea that the
 problem there is the viewpoint and not the object size.
 
 These findings point to the next step: fine-tuning on drone images.

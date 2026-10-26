@@ -97,7 +97,11 @@ def main() -> None:
     parser.add_argument("--model", default="yolo11s.pt", help="Any ultralytics detection model, downloaded automatically")
     parser.add_argument("--tracker", default="bytetrack.yaml", help="bytetrack.yaml or botsort.yaml")
     parser.add_argument("--imgsz", type=int, default=1280, help="Inference size; drone footage has small objects, so larger helps")
-    parser.add_argument("--conf", type=float, default=0.25)
+    # Keep this at or below track_low_thresh (0.1) in the tracker config. Both trackers match
+    # low-confidence boxes in a second step to recover vehicles; a higher detector threshold
+    # would discard those boxes before the tracker ever sees them. New tracks still need
+    # new_track_thresh (0.25), so this does not flood the output with weak tracks.
+    parser.add_argument("--conf", type=float, default=0.1, help="Detector confidence threshold")
     parser.add_argument("--device", default="auto", help="auto, mps, cpu or a CUDA index")
     parser.add_argument("--max-frames", type=int, default=0, help="Limit frames per sequence for quick tests (0 = all)")
     parser.add_argument("--save-video", action="store_true")
