@@ -5,7 +5,7 @@ This project runs YOLO models combined with ByteTrack and BoT-SORT on the
 [VisDrone-MOT](https://github.com/VisDrone/VisDrone-Dataset) benchmark and measures the results
 against the ground truth.
 
-> **Status:** work in progress. Pipeline and data tooling are in place, experiments follow.
+> **Status:** work in progress. Baseline results with pretrained YOLO11s are below, fine-tuning follows.
 
 <!-- Add a GIF of tracked vehicles here once the first run is done -->
 
@@ -62,9 +62,15 @@ python run_tracking.py --data-root data/VisDrone2019-MOT-val --seq <sequence> --
 # 4. Full runs with both trackers
 python run_tracking.py --data-root data/VisDrone2019-MOT-val --tracker bytetrack.yaml
 python run_tracking.py --data-root data/VisDrone2019-MOT-val --tracker botsort.yaml
+
+# 5. Score both runs with TrackEval (HOTA, MOTA, IDF1)
+python evaluate.py --data-root data/VisDrone2019-MOT-val --runs yolo11s_bytetrack yolo11s_botsort
+
+# 6. Break the errors down by object size, occlusion and camera motion
+python analyze_errors.py --data-root data/VisDrone2019-MOT-val --runs yolo11s_bytetrack yolo11s_botsort
 ```
 
-Tracker output is written in MOTChallenge format to `results/<run>/tracks/`, so it can be scored with
+Tracker output is written in MOTChallenge format to `results/<run>/tracks/` and scored with
 [TrackEval](https://github.com/JonathonLuiten/TrackEval).
 
 ## Project structure
@@ -74,23 +80,100 @@ tracking/
     visdrone.py      reading sequences and annotations
     mot_format.py    writing tracker output for evaluation
     drawing.py       boxes, track IDs, video export
+    evaluation.py    ground truth conversion, distractors and ignored regions for TrackEval
+    analysis.py      matching, ID switch events, camera motion
 inspect_data.py      dataset overview
 render_ground_truth.py
 run_tracking.py      detector + tracker over all sequences
+evaluate.py          TrackEval scores per run
+analyze_errors.py    error breakdown and charts
 ```
 
 ## Roadmap
 
 - [x] Data loading and ground-truth visualization
 - [x] Tracking pipeline with ByteTrack and BoT-SORT
-- [ ] Evaluation with TrackEval (HOTA, MOTA, IDF1)
-- [ ] Comparison of trackers and model sizes
+- [x] Evaluation with TrackEval (HOTA, MOTA, IDF1)
+- [x] Comparison of ByteTrack and BoT-SORT
+- [x] Failure analysis (object size, occlusion, camera motion)
+- [ ] Larger input size and tiled inference for small objects
 - [ ] Fine-tuning the detector on VisDrone-DET
-- [ ] Failure analysis
 
 ## Results
 
-Coming soon.
+Baseline: YOLO11s pretrained on COCO, input size 1280, default tracker settings of Ultralytics.
+Evaluated on the six VisDrone2019-MOT validation sequences that contain vehicles
+(uav0000086_00000_v has none and is skipped), about 40,000 vehicle boxes in total.
+
+| Tracker | HOTA | DetA | AssA | MOTA | IDF1 | ID switches | FP | FN |
+|---|---|---|---|---|---|---|---|---|
+| ByteTrack | 44.9 | 36.4 | 56.7 | 37.1 | 52.0 | 423 | 4,759 | 20,145 |
+| BoT-SORT | **50.8** | **38.6** | **67.9** | **39.0** | **60.5** | **233** | 5,377 | **18,955** |
+
+### How the evaluation treats VisDrone
+
+Car, van, truck and bus are merged into one vehicle class, since COCO has no van and
+there are only 11 trucks and buses in the whole split. Tricycles and the "others" category
+look a lot like small vehicles, so a box on one of them is removed instead of being
+counted as a false positive. This is the same distractor rule MOTChallenge uses.
+Boxes that lie at least half inside an ignored region are dropped before scoring,
+as in the official VisDrone toolkit.
+
+### BoT-SORT keeps identities when the drone moves
+
+Both trackers get the same detections, so detection accuracy (DetA) is almost equal.
+The gap is in association: BoT-SORT has 45% fewer ID switches. The reason shows up once
+the switches are split by how much the whole image moves between frames.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/switches_by_motion_dark.png">
+  <img src="docs/figures/switches_by_motion_light.png" alt="ID switches per 100 frames by camera motion" width="600">
+</picture>
+
+With a still camera both trackers behave about the same. When the drone pans, ByteTrack
+loses track much more often (44 vs. 12.5 switches per 100 frames). Both trackers predict
+each box with a constant velocity Kalman filter, but a panning camera moves every object in
+the image at once and the prediction lands next to the vehicle. BoT-SORT estimates this
+global motion with sparse optical flow and corrects its predictions, ByteTrack does not.
+
+### The detector is the bottleneck
+
+Almost half of all vehicles are never detected. When YOLO does fire it is mostly right
+(precision around 80%), so the problem is recall.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/recall_by_size_dark.png">
+  <img src="docs/figures/recall_by_size_light.png" alt="Recall by object size" width="600">
+</picture>
+
+Size matters most. Vehicles smaller than 24 px at inference size make up 27% of the
+ground truth, and fewer than one in four of them is found. In the 4K sequence
+uav0000268_05773_v the image is shrunk by a factor of three before detection, and recall
+drops to 25%. Occlusion has a similar effect: 71% of fully visible vehicles are found,
+46% of partly occluded ones and only 7% of heavily occluded ones.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/recall_by_occlusion_dark.png">
+  <img src="docs/figures/recall_by_occlusion_light.png" alt="Recall by occlusion" width="600">
+</picture>
+
+Viewpoint is the other big factor. uav0000305_00000_v is filmed straight down, and even
+though the cars there are large (median width over 60 px), only 18% of them are detected.
+A COCO model has hardly seen a car roof. The vehicles it does pick up in that sequence sit at
+the image border, where they are seen slightly from the side.
+
+One more detector effect: a van seen at an angle is sometimes detected as the whole vehicle
+and sometimes only as its front. Both boxes overlap the ground truth enough to count, so
+the two competing tracks cause most of the ID switches in the otherwise easy sequence
+uav0000268_05773_v, for both trackers alike.
+
+These findings point to the next steps: a larger input size or tiled inference for the
+small vehicles, and fine-tuning on drone images for the top-down view.
+
+## License
+
+AGPL-3.0, since the project builds on Ultralytics, which is licensed under AGPL-3.0.
+The VisDrone data has its own non-commercial license and is not included.
 
 ## Acknowledgements
 
