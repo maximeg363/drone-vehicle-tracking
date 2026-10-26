@@ -1,0 +1,24 @@
+# Datasets are never committed (license terms forbid redistribution)
+data/*
+!data/.gitkeep
+
+# Outputs
+results/
+runs/
+*.mp4
+*.avi
+
+# Model weights (downloaded automatically by ultralytics)
+*.pt
+*.onnx
+*.mlpackage/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
