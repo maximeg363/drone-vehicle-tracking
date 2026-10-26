@@ -18,11 +18,19 @@ against the ground truth.
 ## Setup
 
 Tested on macOS with Apple Silicon (PyTorch uses the GPU via MPS). Linux with CUDA works as well.
+You need Python 3.10 or newer. The Python 3.9 that ships with macOS is too old for current PyTorch.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+With [uv](https://docs.astral.sh/uv/) you can get a suitable Python in one go:
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
 ## Data
